@@ -1,21 +1,21 @@
 from afip import WSAA
+from decouple import config
+from base64 import b64decode
+
+TESTING_URL = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL"
+AFIP_CERT = config('AFIP_CERT', cast=b64decode).decode()
+AFIP_PKEY = config('AFIP_PKEY', cast=b64decode).decode()
 
 
-wsdl_testing = 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL'
-wsdl_production = 'https://wsaa.afip.gov.ar/ws/services/LoginCms?WSDL'
+def test_login():
+    wsaa = WSAA(
+        TESTING_URL,
+        AFIP_CERT,
+        AFIP_PKEY,
+    )
 
-wsaa = WSAA(
-    wsdl_testing,
-    open('../wsaa_test.crt').read(),
-    open('../wsaa.key').read(),
-)
+    ticket = wsaa.authorize("ws_sr_padron_a5", 30)
 
-wsaa.authorize('ws_sr_padron_a5')
+    print(ticket, flush=True)
 
-wsaa = WSAA(
-    wsdl_production,
-    open('../wsaa.crt').read(),
-    open('../wsaa.key').read(),
-)
-
-print(wsaa.authorize('ws_sr_padron_a5'))
+test_login()
