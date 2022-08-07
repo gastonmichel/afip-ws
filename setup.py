@@ -6,7 +6,7 @@ url = '{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}'
 version = environ['GITHUB_REF'].split('/')[-1]
 
 setup(
-    name='afip',
+    name='afip-ws',
     version=version,
     author='Gaston Michel',
     author_email='michel.z.gaston@gmail.com',
