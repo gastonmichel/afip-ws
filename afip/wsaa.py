@@ -1,42 +1,37 @@
+from datetime import datetime, timedelta, timezone
+import xmltodict
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import pkcs7
 from zeep import Client
-from zeep.helpers import serialize_object
-from zeep.exceptions import Fault
-from datetime import datetime, timezone, timedelta
 
 DEFAULT_TTL = 24 * 60 * 60
 DEFAULT_OFFSET = 5 * 60
 
-LOGIN_TICKET_REQUEST = """<?xml version="1.0" encoding="UTF-8" ?>
-<loginTicketRequest version="1.0">
-  <header>
-    {source}
-    {destination}
-    <uniqueId>{unique_id}</uniqueId>
-    <generationTime>{created_at}</generationTime>
-    <expirationTime>{expires_at}</expirationTime>
-  </header>
-  <service>{service}</service>
-</loginTicketRequest>"""
 
-SOURCE_FIELD = "<source>{}</source>"
-DESTINATION_FIELD = "<destination>{}</destination>"
+class WSAA(Client):
+    def __init__(
+        self,
+        wsdl: str,
+        cert: bytes,
+        key: bytes,
+        password: bytes = None,
+        source: str = None,
+        destination: str = None,
+        **kwargs
+    ):
 
+        self.cert = x509.load_pem_x509_certificate(cert)
 
-class WSAA:
-    def __init__(self, url, cert, key, password=None, source=None, destination=None):
-
-        self.cert = x509.load_pem_x509_certificate(cert.encode())
-
-        self.key = serialization.load_pem_private_key(key.encode(), password)
-
-        self.client = Client(url)
+        self.key = serialization.load_pem_private_key(
+            key, password
+        )
 
         self.source = source
 
         self.destination = destination
+
+        super().__init__(wsdl, **kwargs)
 
     def _prepare_tx(self, service, ttl, offset):
         now = datetime.now(timezone.utc)
@@ -44,21 +39,23 @@ class WSAA:
         created_at = (now - timedelta(seconds=offset)).astimezone()
         expires_at = (now + timedelta(seconds=ttl)).astimezone()
 
-        source = SOURCE_FIELD.format(self.source) if self.source else ""
-        destination = (
-            DESTINATION_FIELD.format(self.destination) if self.destination else ""
-        )
-
-        ticket_options = {
-            "unique_id": timestamp,
-            "created_at": created_at.isoformat(),
-            "expires_at": expires_at.isoformat(),
-            "service": service,
-            "source": source,
-            "destination": destination,
+        header = {
+            "uniqueId": timestamp,
+            "generationTime": created_at.isoformat(),
+            "expirationTime": expires_at.isoformat(),
         }
 
-        return LOGIN_TICKET_REQUEST.format(**ticket_options)
+        if self.source and self.destination:
+            header["source"] = self.source
+            header["destination"] = self.destination
+
+        ticket = {
+            "loginTicketRequest": {
+                "header": header,
+                "service": service,
+            }
+        }
+        return xmltodict.unparse(ticket)
 
     def _sign_tx(self, tx):
 
@@ -78,10 +75,10 @@ class WSAA:
 
         return cms
 
-    def authorize(self, service, ttl=DEFAULT_TTL, offset=DEFAULT_OFFSET):
-        trx = self._prepare_tx(service,ttl,offset)
+    def authorize(
+        self, service: str, ttl: int = DEFAULT_TTL, offset: str = DEFAULT_OFFSET
+    ):
+        trx = self._prepare_tx(service, ttl, offset)
         cms = self._sign_tx(trx)
-        xml = self.client.service["loginCms"](cms)
-
-        obj = serialize_object(xml)
-        return obj
+        r = self.service["loginCms"](cms)
+        return xmltodict.parse(r)
